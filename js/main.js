@@ -1,72 +1,197 @@
 'use strict';
 
-const todoControl   = document.querySelector('.todo-control');
-const headerInput   = document.querySelector('.header-input');
-const todoList      = document.querySelector('.todo-list');
-const todoCompleted = document.querySelector('.todo-completed');
+class Todo {
+  constructor(form, input, todoList, todoCompleted) {
+    this.form = document.querySelector(form);
+    this.input = document.querySelector(input);
+    this.todoList = document.querySelector(todoList);
+    this.todoCompleted = document.querySelector(todoCompleted);
+    this.todoData = new Map(JSON.parse(localStorage.getItem('todoList')));
+  }
 
-let todoData = [];
+  addToStorage() {
+    localStorage.setItem('todoList', JSON.stringify([...this.todoData]));
+  }
 
-const render = () => {
-  todoList.textContent = '';
-  todoCompleted.textContent = '';
+  render() {
+    this.input.value = '';
+    this.todoList.textContent = '';
+    this.todoCompleted.textContent = '';
+    this.todoData.forEach(this.createElem, this);
+    this.addToStorage();
+  }
 
-  todoData = JSON.parse(localStorage.todoData) || [];
-
-  todoData.forEach((item) => {
+  createElem(item) {
     const li = document.createElement('li');
     li.classList.add('todo-item');
-
-    li.innerHTML = `
-      <span class="text-todo">${item.value}</span>
+    li.key = item.key;
+    li.insertAdjacentHTML('beforeend', `
+      <input class="text-todo" value="${item.value}" disabled>
       <div class="todo-buttons">
+        <button class="todo-edit"></button>
         <button class="todo-remove"></button>
         <button class="todo-complete"></button>
       </div>
-    `;
+      <div class="todo-delete"></div>
+    `);
 
     if (item.completed) {
-      todoCompleted.append(li);
+      this.todoCompleted.append(li);
     } else {
-      todoList.append(li);
+      this.todoList.append(li);
     }
-    
-    const todoCompleteBtn = li.querySelector('.todo-complete');
-    const todoRemoveBtn   = li.querySelector('.todo-remove');
+  }
 
-    todoCompleteBtn.addEventListener('click', () => {
-      item.completed = !item.completed;
-      localStorage.setItem('todoData', JSON.stringify(todoData));
-      render();
-    });
+  addTodo(event) {
+    event.preventDefault();
 
-    todoRemoveBtn.addEventListener('click', () => {
-      const index = todoData.indexOf(item);
-      todoData.splice(index, 1);
-      localStorage.setItem('todoData', JSON.stringify(todoData));
+    if (this.input.value.trim()) {
+      this.input.classList.remove('error');
+      this.input.placeholder = 'Какие планы?';
 
-      li.parentNode.removeChild(li);
-    });
-  });
-};
+      const newTodo = {
+        value: this.input.value,
+        completed: false,
+        key: this.generateKey(),
+      };
 
-todoControl.addEventListener('submit', (event) => {
-  event.preventDefault();
+      this.todoData.set(newTodo.key, newTodo);
+      this.render();
+    } else {
+      this.input.value = '';
+      this.input.classList.add('error');
+      this.input.placeholder = 'Нельзя добавить пустоту!';
+    }
+  }
 
-  if (headerInput.value.trim()) {
-    const newTodo = {
-      value: headerInput.value,
-      completed: false,
+  generateKey() {
+    return Math.random().toString(36).slice(2, 15) + Math.random().toString(36).slice(2, 15);
+  }
+
+  deleteAnimation(target) {
+    const deleteLine = target.querySelector('.todo-delete');
+
+    let opacity = 1;
+    let width = 0;
+
+    let animateId;
+
+    const animate = () => {
+      if (width <= 99) {
+        width += 2;
+        opacity -= 0.018;
+
+        deleteLine.style.width = width + '%';
+        target.style.opacity = opacity;
+
+        animateId = requestAnimationFrame(animate);
+      } else {
+        cancelAnimationFrame(animateId);
+      }
     };
 
-    headerInput.value = '';
-
-    todoData = JSON.parse(localStorage.getItem('todoData')) || [];
-    todoData.push(newTodo);
-    localStorage.setItem('todoData', JSON.stringify(todoData));
-
-    render();
+    animateId = requestAnimationFrame(animate);
   }
-});
 
-render();
+  deleteItem(target) {
+    target = target.closest('.todo-item');
+    this.todoData.forEach(item => {
+      if (target.key === item.key) {
+        this.deleteAnimation(target);
+
+        setTimeout(() => {
+          this.todoData.delete(item.key);
+          this.render();
+        }, 450);
+      }
+    });
+  }
+
+  completeAnimation(target) {
+    let transform = 0;
+    let start = new Date().getTime();
+
+    let animateId;
+
+    const animate = () => {
+      if (transform > -100) {
+        transform -= 3;
+
+        target.style.transform = `translateX(${transform}%)`;
+
+        animateId = requestAnimationFrame(animate);
+      } else {
+        console.log(new Date().getTime() - start);
+        cancelAnimationFrame(animateId);
+      }
+    };
+
+    animateId = requestAnimationFrame(animate);
+  }
+
+  completedItem(target) {
+    target = target.closest('.todo-item');
+    this.todoData.forEach(item => {
+      if (target.key === item.key) {
+        this.completeAnimation(target);
+        setTimeout(() => {
+          if (item.completed) {
+            item.completed = false;
+          } else {
+            item.completed = true;
+          }
+
+          this.render();
+        }, 250);
+      }
+    });
+  }
+
+  editItem(target) {
+    target = target.closest('.todo-item');
+    this.todoData.forEach(item => {
+      if (target.key === item.key) {
+        let input = target.querySelector('.text-todo');
+
+        input.removeAttribute('disabled');
+        input.setAttribute('contenteditable', 'true');
+
+        input.focus();
+        input.selectionStart = input.value.length;
+
+        input.addEventListener('blur', () => {
+          input.disabled = 'disabled';
+          input.removeAttribute('contenteditable');
+
+          item.value = input.value;
+          this.render();
+        });
+      }
+    });
+  }
+
+  handler() {
+    document.querySelector('.todo-container').addEventListener('click', event => {
+      let target = event.target;
+
+      if (target.classList.contains('todo-remove')) {
+        this.deleteItem(target);
+        target.disabled = 'disabled';
+      } else if (target.classList.contains('todo-complete')) {
+        this.completedItem(target);
+      } else if (target.classList.contains('todo-edit')) {
+        this.editItem(target);
+      }
+    });
+  }
+
+  init() {
+    this.form.addEventListener('submit', this.addTodo.bind(this));
+    this.render();
+    this.handler();
+  }
+}
+
+const todo = new Todo('.todo-control', '.header-input', '.todo-list', '.todo-completed');
+
+todo.init();
